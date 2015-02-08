@@ -11,13 +11,13 @@
 
 /*********************************************************************/
 /*IN DEPTH SOFTWARE FUNCTIONAL DISCRIPTION:                          */
-/* 1. Low Voltage Cutoff                                             */
+/* @1. Low Voltage Cutoff                                             */
 /* 2. Cruise Control                                                 */
-/* 3. Economy Mode                                                   */
-/* 4. Motor Stall Protection                                         */
-/* 5. Fault Indication (LED)                                         */
-/* 6. Motor Torque Modulation for Turns                              */
-/* 7. Soft Reverse                                                   */
+/* @3. Economy Mode                                                   */
+/* @4. Motor Stall Protection                                         */
+/* @5. Fault Indication (LED)                                         */
+/* @6. Motor Torque Modulation for Turns                              */
+/* @7. Soft Reverse                                                   */
 /*********************************************************************/
 
 
@@ -51,93 +51,278 @@
 #pragma config LPBOR = OFF      // Low Power Brown-Out Reset Enable Bit (Low power brown-out is disabled)
 #pragma config LVP = ON         // Low-Voltage Programming Enable (Low-voltage programming enabled)
 
+/*Microchip Libraries*/
 #include <stdio.h>
 #include <stdlib.h>
-#include <pic16f1824.h>
+#include <pic16f1788.h>
 #include <xc.h>
 
+/* Custom Library files written by Anass*/
+#include "Controller_PWM.h"
+#include "Controller_Measure.h"
+
+/*Set Low Voltage Cutoff*/
+#define BATT_MIN 30
 
 
 
 
 
-
-
-/* Everything below is from the old code*/
-/* needs extensive modification*/
-
-
-void initialize(void);
-void pwm_initalize(void);
-int read_sensor(void);
-int read_throttle(void);
 
 
 main(){
 
 
-    /* code for the left side*/
-
+/*NOTE: port directions need to be figured out and changed in initialize*/
+/*all initailizations need to be confirmed really as they are all old*/
 initialize();
-pwm_initalize();
-int throttle;
-int sensor;
-int throttle_scaled;
-float temp;
-
-        while(1){
-
-            /* Get the ADC values of the throttle and sensor*/
-            throttle = read_throttle();
-            sensor = read_sensor();
-
-            /* scale throttle corresponding to the value of PR2 register,
-             needed for changing the duty cycle*/
-            temp=throttle *0.3978;
-            throttle_scaled=temp;
-
-            if(PIR1bits.TMR2IF == 1){
-                TRISCbits.TRISC5 = 0;
-            }
 
 
+float steering_sensor;
+float left_pwm;
+float right_pwm;
+int reverse_counter;
+int i;
+int batt_fault;
+int motor_fault;
+int cruise_control;
+float cruise_control_v;
+/*record current reverse switch state*/
+int reverse_switch = PORTAbits.RA1;
 
-/*1023(3/10)=307*/
-            if(sensor>307){
+while(1){
 
-/* If making a right turn or going straight then don't modulate throttle signal*/
-
-
-                /* settung registers for duty cycle */
-                CCP1CONbits.DC1B0 = (throttle_scaled & 0x01);
-
-                CCP1CONbits.DC1B1 = ((throttle_scaled) & 0x02)>>1;
-
-                CCPR1L = (throttle_scaled)>>2;
-            }else{
+    //////////////////////////////////////////////////
+    /*             Low Voltage Cutoff               */
+    //////////////////////////////////////////////////
 
 
 
+    if(measure_batt() <= BATT_MIN){
 
-                /*making a Left turn, this side must slow down*/
-                temp=throttle_scaled*0.75;
-                throttle_scaled=temp;
+        /*Turn output Enable off*/
+        PORTAbits.RA0 = 1;
 
-                /* settung registers for duty cycle */
-                CCP1CONbits.DC1B0 = (throttle_scaled & 0x01);
+        /*Blink Fault LED at 1 Hz*/
+        batt_fault = 1;
 
-                CCP1CONbits.DC1B1 = ((throttle_scaled) & 0x02)>>1;
+    }else{
 
-                CCPR1L = (throttle_scaled)>>2;
+        /* Turn Output Enable on*/
+
+        PORTAbits.RA0 = 0;
+        batt_fault = 0;
+    }
 
 
 
-            }
+
+ /////////////////////////////////////////////////////
+ /*               Motor Stall Protection            */
+ /////////////////////////////////////////////////////
 
 
+    if( measure_hall == 0 && measure_throttle > 2 || cruise_control_v > 2 ){
+
+        sleep(1);
+
+        /*wait a second and remeasure to make sure the motor is really stalled*/
+        if( measure_hall == 0 && measure_throttle > 2 || cruise_control_v > 2 ){
+        motor_fault = 1;
 
         }
+    }
+
+
+////////////////////////////////////////////////////////
+/*              Fault Control                         */
+////////////////////////////////////////////////////////
+
+    /*NOTE: Need to add fault output support!!!*/
+    
+    if(batt_fault == 1){
+
+        /*in case of battery fault blink LED at 2 Hz*/
+        fault_blink(2);
+        /*Turn output Enable off*/
+        PORTAbits.RA0 = 1;
+    }
+
+    if(motor_fault == 1){
+
+        /*in case of motor stall fault blink LED at 1 Hz*/
+        fault_blink(1);
+        /*Turn output Enable off*/
+        PORTAbits.RA0 = 1;
+
+    }
+
+    
+
+   if(motor_fault == 0 && batt_fault == 0){
+
+       /*in case of no fault turn off LED*/
+        fault_blink(0);
+        /* Turn Output Enable on*/
+        PORTAbits.RA0 = 0;
+
+
+    }
+
+
+
+
+    
+    /////////////////////////////////////////////////////
+    /* Motor Torque Modulation for Turns & Economy Mode*/
+    /////////////////////////////////////////////////////
+
+
+    /*read in and store value of steering sensor*/
+
+    steering_sensor = measure_steering(void);
+
+    /*Determine the PWM for the intercept MOSFET on each motor*/
+    /*12 bit ADC -> 8191 as maximum value*/
+    /* Right now the speed scaling is a constant value for simplicity
+       can be upgraded later                                        */
+    
+    /*when turning to the left slow down the left*/
+    if(steering_sensor <= 8191*(0.3)){
+
+
+        left_pwm=0.7;
+        right_pwm=1;
+
+        /*If the economy mode switch is turned on scale throttle by %75*/
+    if(PORTAbits.RA3 == 1){
+
+        left_pwm=left_pwm*0.75;
+        right_pwm=right_pwm*0.75;
+
+    }
+
+
+        /*Change the PWM values of the throttle intercept mosfets*/
+        pwm_l(left_pwm);
+        pwm_r(right_pwm);
+
+    }
+
+    /*When turning to the right slow down the right */
+    if(steering_sensor >= 8191*(0.7)){
+
+        left_pwm=1;
+        right_pwm=0.7;
+
+        /*If the economy mode switch is turned on scale throttle by %75*/
+         if(PORTAbits.RA3 == 1){
+
+        left_pwm=left_pwm*0.75;
+        right_pwm=right_pwm*0.75;
+
+         }
+
+        /*Change the PWM values of the throttle intercept mosfets*/
+        pwm_l(left_pwm);
+        pwm_r(right_pwm);
+
+    }
+
+    /*when going straight make no change to the throttle signal*/
+    if(steering_sensor >= 8191*(7/10) && steering_sensor <= 8191*(3/10)){
+
+        left_pwm=1;
+        right_pwm=1;
+
+        /*If the economy mode switch is turned on scale throttle by %75*/
+        if(PORTAbits.RA3 == 1){
+
+        left_pwm=left_pwm*0.75;
+        right_pwm=right_pwm*0.75;
+
+        }
+
+        /*Change the PWM values of the throttle intercept mosfets*/
+        pwm_l(left_pwm);
+        pwm_r(right_pwm);
+
+    }
+
+
+
+
+   ///////////////////////////////////////////////////////
+   /*                   Soft Reverse                    */
+   ///////////////////////////////////////////////////////
+
+   /*Performs a soft reverse if the vehicle is moving and performs
+    a hard reverse if the vehicle is stationary*/
+
+    /*look for a state change in the reverse switch to activte soft reverse*/
+
+    if( reverse_switch != PORTAbits.RA1 ){
+
+        /*save change in reverse switch state*/
+        reverse_switch = PORTAbits.RA1;
+
+        /*if the motor is moving do the soft reverse routine*/
+        if( measure_hall() > 0 ){
+
+            /*ramp down throttle*/
+            for(i=100; i>0; i--){
+
+                pwm_l(i/100);
+                pwm_r(i/100);
+                sleep(0.01);
+
+            }
+
+            /*Change State of FWD/REV output*/
+            PORTCbits.RC6 = ~PORTCbits.RC6;
+
+             /*ramp up throttle*/
+            for(i=0; i<100; i++){
+
+                pwm_l(i/100);
+                pwm_r(i/100);
+                sleep(0.01);
+
+            }
+            /*if the motor is stopped perform a hard reverse*/
+        }else{
+
+             /*Change State of FWD/REV output*/
+            PORTCbits.RC6 = ~PORTCbits.RC6;
+
+        }
+
+    }
+
+   //////////////////////////////////////////////////////////
+   /*                   Cruise Control                     */
+   //////////////////////////////////////////////////////////
+
+
+
+        
+
+
+
+
+
+
+
+
+
+
+
+
 }
+
+}
+
+
 
 void initialize(void)
 {
@@ -187,53 +372,4 @@ void initialize(void)
 
 
 
-}
-
-
-void pwm_initalize(void){
-
-    PR2 = 0x65;
-
-    CCP1CON = 0b00111100;
-    //Configure PWM mode and...
-    //bits 4-5 are the two LSBs of PWM duty cycle
-
-    CCPR1L=00000111;
-    //First 6 LSBs are the 6 MSBs of PWM duty cycle
-
-    PIR1bits.TMR2IF=0;
-    //Clear the timer 2 interrupt flag
-
-    T2CON = 0b00000100;
-    //Enable timer and set prescaler to 1
-
-}
-
-int read_sensor(void){
-     ADCON0 = 0b10010001;
-
-
-     int ADC_VAL;
-
-     ADCON0bits.GO = 1;          //start conversion cycle
-
-while(ADCON0bits.GO != 0);
-ADC_VAL = ((ADRESH << 8)| ADRESL);
-
-return ADC_VAL;
-
-}
-
-
-int read_throttle(void){
-     ADCON0 = 0b10010101;
-
-     int ADC_VAL;
-
-     ADCON0bits.GO = 1;          //start conversion cycle
-
-while(ADCON0bits.GO != 0);
-ADC_VAL = ((ADRESH << 8)| ADRESL);
-
-return ADC_VAL;
 }
