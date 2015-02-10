@@ -12,7 +12,7 @@
 /*********************************************************************/
 /*IN DEPTH SOFTWARE FUNCTIONAL DISCRIPTION:                          */
 /* @1. Low Voltage Cutoff                                             */
-/* 2. Cruise Control                                                 */
+/* @2. Cruise Control                                                 */
 /* @3. Economy Mode                                                   */
 /* @4. Motor Stall Protection                                         */
 /* @5. Fault Indication (LED)                                         */
@@ -67,9 +67,6 @@
 
 
 
-
-
-
 main(){
 
 
@@ -77,18 +74,31 @@ main(){
 /*all initailizations need to be confirmed really as they are all old*/
 initialize();
 
-
+/*value of steering sensor*/
 float steering_sensor;
-float left_pwm;
-float right_pwm;
+
+/*pwm ratio for each side*/
+float left_pwm = 1;
+float right_pwm = 1;
+
+
 int reverse_counter;
 int i;
 int batt_fault;
 int motor_fault;
+
+/*indicates steering PWM change*/
+int left,right,straight = 0;
+
+/*cruise control status*/
 int cruise_control;
+/*cruise control voltage*/
 float cruise_control_v;
 /*record current reverse switch state*/
 int reverse_switch = PORTAbits.RA1;
+
+/*counts presses and releases of button*/
+int button_counter = 0;
 
 while(1){
 
@@ -100,17 +110,12 @@ while(1){
 
     if(measure_batt() <= BATT_MIN){
 
-        /*Turn output Enable off*/
-        PORTAbits.RA0 = 1;
-
-        /*Blink Fault LED at 1 Hz*/
+        /*Indicate battery fault*/
         batt_fault = 1;
 
     }else{
 
-        /* Turn Output Enable on*/
-
-        PORTAbits.RA0 = 0;
+       /*Clear battery fault*/
         batt_fault = 0;
     }
 
@@ -122,13 +127,14 @@ while(1){
  /////////////////////////////////////////////////////
 
 
-    if( measure_hall == 0 && measure_throttle > 2 || cruise_control_v > 2 ){
+    if( measure_hall() == 0 && measure_throttle() > 2 || cruise_control_v() > 2 ){
 
         sleep(1);
 
         /*wait a second and remeasure to make sure the motor is really stalled*/
-        if( measure_hall == 0 && measure_throttle > 2 || cruise_control_v > 2 ){
-        motor_fault = 1;
+        if( measure_hall() == 0 && measure_throttle() > 2 || cruise_control_v() > 2 ){
+
+            motor_fault = 1;
 
         }
     }
@@ -188,11 +194,15 @@ while(1){
        can be upgraded later                                        */
     
     /*when turning to the left slow down the left*/
-    if(steering_sensor <= 8191*(0.3)){
-
-
-        left_pwm=0.7;
-        right_pwm=1;
+    if(steering_sensor <= 8191*(0.3) && left == 0){
+        /*scale the left side*/
+        left_pwm=left_pwm*0.75;
+        /*return right side to full power*/
+        if(cruise_control == 1){
+            right_pwm=(cruise_control_v/6.5);
+        }else{
+             right_pwm=1;
+        }
 
         /*If the economy mode switch is turned on scale throttle by %75*/
     if(PORTAbits.RA3 == 1){
@@ -203,17 +213,39 @@ while(1){
     }
 
 
-        /*Change the PWM values of the throttle intercept mosfets*/
+        /*Change the PWM values of the throttle intercept mosfets or cruise
+         control mosfets*/
+        if( cruise_control == 0){
+            
         pwm_l(left_pwm);
         pwm_r(right_pwm);
+            
+        }else{
+            
+        pwm_cc_l(left_pwm);
+        pwm__cc_r(right_pwm);
+            
+        }
+
+
+        /*set PWM status*/
+        left = 1;
+        right = 0;
+        straight = 0;
 
     }
 
     /*When turning to the right slow down the right */
-    if(steering_sensor >= 8191*(0.7)){
+    if(steering_sensor >= 8191*(0.7) && right == 0){
 
-        left_pwm=1;
-        right_pwm=0.7;
+       
+        right_pwm=right_pwm*0.75;
+         /*return left side to full power*/
+        if(cruise_control == 1){
+            left_pwm=(cruise_control_v/6.5);
+        }else{
+            left_pwm=1;
+        }
 
         /*If the economy mode switch is turned on scale throttle by %75*/
          if(PORTAbits.RA3 == 1){
@@ -223,17 +255,40 @@ while(1){
 
          }
 
-        /*Change the PWM values of the throttle intercept mosfets*/
+       /*Change the PWM values of the throttle intercept mosfets or cruise
+         control mosfets*/
+        if( cruise_control == 0){
+            
         pwm_l(left_pwm);
         pwm_r(right_pwm);
+            
+        }else{
+            
+        pwm_cc_l(left_pwm);
+        pwm__cc_r(right_pwm);
+            
+        }
+
+        /*set PWM status*/
+        left = 0;
+        right = 1;
+        straight = 0;
 
     }
 
     /*when going straight make no change to the throttle signal*/
-    if(steering_sensor >= 8191*(7/10) && steering_sensor <= 8191*(3/10)){
+    if(steering_sensor >= 8191*(7/10) && steering_sensor <= 8191*(3/10)
+            && straight == 0){
 
-        left_pwm=1;
-        right_pwm=1;
+         /*return left & right side to full power*/
+        if(cruise_control == 1){
+            right_pwm=(cruise_control_v/6.5);
+            left_pwm=(cruise_control_v/6.5);
+
+        }else{
+             right_pwm=1;
+              left_pwm=1;
+        }
 
         /*If the economy mode switch is turned on scale throttle by %75*/
         if(PORTAbits.RA3 == 1){
@@ -243,9 +298,24 @@ while(1){
 
         }
 
-        /*Change the PWM values of the throttle intercept mosfets*/
+       /*Change the PWM values of the throttle intercept mosfets or cruise
+         control mosfets*/
+        if( cruise_control == 0){
+            
         pwm_l(left_pwm);
         pwm_r(right_pwm);
+            
+        }else{
+            
+        pwm_cc_l(left_pwm);
+        pwm__cc_r(right_pwm);
+            
+        }
+
+        /*set PWM status*/
+        left = 0;
+        right = 0;
+        straight = 1;
 
     }
 
@@ -303,25 +373,68 @@ while(1){
    /*                   Cruise Control                     */
    //////////////////////////////////////////////////////////
 
+    /*NOTE: This is the simpleist version of the cruise control algorithm which
+     maintains the set throttle voltage, it does not maintain the wheel
+     speed by using a feedback loop, although this could be upgraded*/
+
+    /*cruise control momentary switch press*/
+    if( PORTAbits.RA2 == 1 && button_counter == 0){
+
+        button_counter++;
+    }
+     /*cruise control momentary switch release*/
+    if( PORTAbits.RA2 == 0 && button_counter == 1){
+
+        button_counter++;
+        cruise_control = 1;
+
+        /*store current throttle voltage*/
+        cruise_control_v = measure_throttle();
 
 
-        
+        /*Disable the throttle intercept mosfets*/
+        pwm_l(0);
+        pwm_r(0);
+
+        /*PWM cruise control mosfets to maintain throttle voltage*/
+        pwm_cc_r(right_pwm);
+        pwm_cc_l(left_pwm);
 
 
 
+    }
+
+/*cruise control momentary switch press*/
+    if( PORTAbits.RA2 == 1 && button_counter == 2){
+
+        button_counter++;
+
+    }
+
+    /*cruise control momentary switch release*/
+    /*turn off cruise control*/
+ if( PORTAbits.RA2 == 0 && button_counter == 3){
+
+        cruise_control = 0;
+        button_counter = 0;
+
+        /*Disable cruise control MOSFETS*/
+         pwm_cc_r(0);
+         pwm_cc_l(0);
 
 
+        /*enable intercept mosfets*/
+         pwm_l(1);
+        pwm_r(1);
 
-
-
-
+    }
 
 
 
 }
 
-}
 
+}
 
 
 void initialize(void)
@@ -373,3 +486,6 @@ void initialize(void)
 
 
 }
+
+
+
