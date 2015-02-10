@@ -11,45 +11,15 @@
 
 /*********************************************************************/
 /*IN DEPTH SOFTWARE FUNCTIONAL DISCRIPTION:                          */
-/* @1. Low Voltage Cutoff                                             */
-/* @2. Cruise Control                                                 */
-/* @3. Economy Mode                                                   */
-/* @4. Motor Stall Protection                                         */
-/* @5. Fault Indication (LED)                                         */
-/* @6. Motor Torque Modulation for Turns                              */
-/* @7. Soft Reverse                                                   */
+/* 1. Low Voltage Cutoff                                             */
+/* 2. Cruise Control                                                 */
+/* 3. Economy Mode                                                   */
+/* 4. Motor Stall Protection                                         */
+/* 5. Fault Indication (LED)                                         */
+/* 6. Motor Torque Modulation for Turns                              */
+/* 7. Soft Reverse                                                   */
 /*********************************************************************/
 
-
-// PIC16F1788 Configuration Bit Settings
-
-// 'C' source line config statements
-
-#include <xc.h>
-
-// #pragma config statements should precede project file includes.
-// Use project enums instead of #define for ON and OFF.
-
-// CONFIG1
-#pragma config FOSC = ECH       // Oscillator Selection (ECH, External Clock, High Power Mode (4-32 MHz): device clock supplied to CLKIN pin)
-#pragma config WDTE = ON        // Watchdog Timer Enable (WDT enabled)
-#pragma config PWRTE = OFF      // Power-up Timer Enable (PWRT disabled)
-#pragma config MCLRE = ON       // MCLR Pin Function Select (MCLR/VPP pin function is MCLR)
-#pragma config CP = OFF         // Flash Program Memory Code Protection (Program memory code protection is disabled)
-#pragma config CPD = OFF        // Data Memory Code Protection (Data memory code protection is disabled)
-#pragma config BOREN = ON       // Brown-out Reset Enable (Brown-out Reset enabled)
-#pragma config CLKOUTEN = OFF   // Clock Out Enable (CLKOUT function is disabled. I/O or oscillator function on the CLKOUT pin)
-#pragma config IESO = ON        // Internal/External Switchover (Internal/External Switchover mode is enabled)
-#pragma config FCMEN = ON       // Fail-Safe Clock Monitor Enable (Fail-Safe Clock Monitor is enabled)
-
-// CONFIG2
-#pragma config WRT = OFF        // Flash Memory Self-Write Protection (Write protection off)
-#pragma config VCAPEN = OFF     // Voltage Regulator Capacitor Enable bit (Vcap functionality is disabled on RA6.)
-#pragma config PLLEN = ON       // PLL Enable (4x PLL enabled)
-#pragma config STVREN = ON      // Stack Overflow/Underflow Reset Enable (Stack Overflow or Underflow will cause a Reset)
-#pragma config BORV = LO        // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (Vbor), low trip point selected.)
-#pragma config LPBOR = OFF      // Low Power Brown-Out Reset Enable Bit (Low power brown-out is disabled)
-#pragma config LVP = ON         // Low-Voltage Programming Enable (Low-voltage programming enabled)
 
 /*Microchip Libraries*/
 #include <stdio.h>
@@ -70,8 +40,6 @@
 main(){
 
 
-/*NOTE: port directions need to be figured out and changed in initialize*/
-/*all initailizations need to be confirmed really as they are all old*/
 initialize();
 
 /*value of steering sensor*/
@@ -425,7 +393,7 @@ while(1){
 
         /*enable intercept mosfets*/
          pwm_l(1);
-        pwm_r(1);
+         pwm_r(1);
 
     }
 
@@ -437,50 +405,54 @@ while(1){
 }
 
 
-void initialize(void)
-{
+void initialize(void){
+
+
+/*config1 and config2 settings*/
+
+// CONFIG1
+#pragma config FOSC = INTOSC    // Oscillator Selection (INTOSC oscillator: I/O function on CLKIN pin)
+#pragma config WDTE = ON        // Watchdog Timer Enable (WDT enabled)
+#pragma config PWRTE = OFF      // Power-up Timer Enable (PWRT disabled)
+#pragma config MCLRE = ON       // MCLR Pin Function Select (MCLR/VPP pin function is MCLR)
+#pragma config CP = OFF         // Flash Program Memory Code Protection (Program memory code protection is disabled)
+#pragma config CPD = OFF        // Data Memory Code Protection (Data memory code protection is disabled)
+#pragma config BOREN = ON       // Brown-out Reset Enable (Brown-out Reset enabled)
+#pragma config CLKOUTEN = OFF   // Clock Out Enable (CLKOUT function is disabled. I/O or oscillator function on the CLKOUT pin)
+#pragma config IESO = ON        // Internal/External Switchover (Internal/External Switchover mode is enabled)
+#pragma config FCMEN = ON       // Fail-Safe Clock Monitor Enable (Fail-Safe Clock Monitor is enabled)
+
+// CONFIG2
+#pragma config WRT = OFF        // Flash Memory Self-Write Protection (Write protection off)
+#pragma config VCAPEN = OFF     // Voltage Regulator Capacitor Enable bit (Vcap functionality is disabled on RA6.)
+#pragma config PLLEN = ON       // PLL Enable (4x PLL enabled)
+#pragma config STVREN = ON      // Stack Overflow/Underflow Reset Enable (Stack Overflow or Underflow will cause a Reset)
+#pragma config BORV = LO        // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (Vbor), low trip point selected.)
+#pragma config LPBOR = OFF      // Low Power Brown-Out Reset Enable Bit (Low power brown-out is disabled)
+#pragma config LVP = ON         // Low-Voltage Programming Enable (Low-voltage programming enabled)
 
 
 
-    OSCCON = 0b01110101;
-    //Configure Oscillator
-                                    //bit 7,unimplemented
-                                    //Internal Osc. Freq. 111, 8 MHz
-                                    //bit 3, OSC is running from internal osc
-                                    //bit 2,High frequency is stable
-                                    //bit 1, low frequency is unstable
-                                    //bit 0, internal osc is defined by system clock
-
-    //I/O Configuration
+/*Sets internal oscillator and configures to 32Mhz */
+    OSCCON = 0b11111010;
+    
+/*initalizes the I/O ports to 0*/
 
     PORTA = 0b00000000;
-
+    PORTB = 0b00000000;
     PORTC = 0b00000000;
 
-    ANSEL = 0b00110000;
-
-    CMCON0 = 0b00000111;
-
-    TRISA = 0b00000000;           //All portA pins configured as outputs
-
-
-    TRISC= 0b00100011;
-
-
-
-    //ADC configuration
-    ADCON0 = 0b10010001;
-    //bit 7,right justified
-    //bit 6, vref = VDD
-    //bit 5, unimplemented
-    //bits 4-2, Analog Channel Select AN1(RA1)
-    //bit 1, Conversion status bit(GO/nDONE) cleared
-    //bit 0,ADC Enable bit set.
-
-    ADCON1 = 0b01110000;
-    //bit 7, unimplemented
-    //bit 6-4, x11, clock is system clock(500 kHZ)
-    //bits 3-0, unimplemented
+    /* configures ports for analog or digital*/
+    /*analog ports - RA5,RB0,RB1*/
+    ANSELA = 0b00100000;
+    ANSELB = 0b00000011;
+    ANSELC = 0b00000000;
+   
+    /*sets the direction for each port*/
+    /*Inputs - RA1,RA2,RA3,RA4,RA5,RB0,RB1,RC5,RC7 */
+    TRISA = 0b00111110;
+    TRISB = 0b00000011;
+    TRISC = 0b10100000;
 
 
 
